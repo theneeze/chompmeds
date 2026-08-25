@@ -60,28 +60,30 @@ module.exports = async (req, res) => {
 
     const { dateStr, timeStr, weekday } = getLocalParts(timezone);
 
-    // 1. Create today's pending log rows for medicines due right now.
-    const { data: dueMedicines, error: dueErr } = await supabase
+    // 1. Create today's pending log rows for every medicine/time due right now.
+    const { data: activeMedicines, error: dueErr } = await supabase
       .from("medicines")
       .select("*")
-      .eq("active", true)
-      .eq("time", timeStr);
+      .eq("active", true);
 
     if (dueErr) throw dueErr;
 
-    for (const med of dueMedicines || []) {
+    for (const med of activeMedicines || []) {
       if (!med.days_of_week.includes(weekday)) continue;
-      await supabase
-        .from("logs")
-        .upsert(
-          {
-            medicine_id: med.id,
-            log_date: dateStr,
-            scheduled_time: med.time,
-            status: "pending"
-          },
-          { onConflict: "medicine_id,log_date", ignoreDuplicates: true }
-        );
+      for (const t of med.times || []) {
+        if (t !== timeStr) continue;
+        await supabase
+          .from("logs")
+          .upsert(
+            {
+              medicine_id: med.id,
+              log_date: dateStr,
+              scheduled_time: t,
+              status: "pending"
+            },
+            { onConflict: "medicine_id,log_date,scheduled_time", ignoreDuplicates: true }
+          );
+      }
     }
 
     // 2. Load all not-yet-taken logs for today, with their medicine info.

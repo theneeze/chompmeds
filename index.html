@@ -456,6 +456,21 @@
   .kind-toggle button.active.vitamin { border-color: var(--vitamin); color: var(--vitamin); }
 
   .day-row { display: flex; gap: 6px; }
+
+  .times-list { display: flex; flex-direction: column; gap: 8px; }
+  .time-row { display: flex; gap: 8px; align-items: center; }
+  .time-row input[type="time"] { flex: 1; }
+  .time-row .remove-time-btn {
+    background: var(--bg-card);
+    border: none;
+    color: var(--overdue);
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    font-size: 16px;
+    cursor: pointer;
+    flex: 0 0 auto;
+  }
+  .time-row .remove-time-btn:disabled { opacity: 0.3; cursor: not-allowed; }
   .day-toggle {
     flex: 1;
     aspect-ratio: 1;
@@ -682,8 +697,9 @@
       </div>
 
       <div class="field">
-        <label>Time</label>
-        <input type="time" id="medTime" required />
+        <label>Times per day</label>
+        <div class="times-list" id="timesList"></div>
+        <button type="button" class="btn small secondary" id="addTimeBtn" style="margin-top:8px;">+ Add another time</button>
       </div>
 
       <div class="field">
@@ -732,7 +748,14 @@ function showFatalError(msg) {
   }
   el.textContent = "⚠️ " + msg;
 }
-window.addEventListener("error", (e) => showFatalError(e.message));
+window.addEventListener("error", (e) => {
+  // A bare "Script error." with no filename/line number is the classic
+  // signature of noise from the browser itself (e.g. Safari's Share Sheet
+  // preview generation), not from our own code, real errors in this page
+  // always come with a filename attached. Ignore that specific case.
+  if (e.message === "Script error." && !e.filename) return;
+  showFatalError(e.message);
+});
 window.addEventListener("unhandledrejection", (e) =>
   showFatalError((e.reason && e.reason.message) || String(e.reason))
 );
@@ -845,7 +868,7 @@ async function loadSettings() {
 }
 
 async function loadMedicines() {
-  const { data } = await sb.from("medicines").select("*").order("time", { ascending: true });
+  const { data } = await sb.from("medicines").select("*").order("name", { ascending: true });
   state.medicines = data || [];
 }
 
@@ -872,16 +895,18 @@ function buildTodayItems() {
   for (const med of state.medicines) {
     if (!med.active) continue;
     if (!med.days_of_week.includes(weekday)) continue;
-    const log = state.todayLogs.find((l) => l.medicine_id === med.id);
-    let status = "upcoming";
-    if (log) {
-      status = log.status === "taken" ? "taken" : (med.time <= timeStr ? "due" : "upcoming");
-    } else if (med.time <= timeStr) {
-      status = "due";
+    for (const t of med.times || []) {
+      const log = state.todayLogs.find((l) => l.medicine_id === med.id && l.scheduled_time === t);
+      let status = "upcoming";
+      if (log) {
+        status = log.status === "taken" ? "taken" : (t <= timeStr ? "due" : "upcoming");
+      } else if (t <= timeStr) {
+        status = "due";
+      }
+      items.push({ med, log, time: t, status });
     }
-    items.push({ med, log, status });
   }
-  items.sort((a, b) => a.med.time.localeCompare(b.med.time));
+  items.sort((a, b) => a.time.localeCompare(b.time));
   return items;
 }
 
@@ -916,22 +941,23 @@ function renderToday() {
 
   list.innerHTML = "";
   items.forEach((item) => {
-    const { med, log, status } = item;
+    const { med, log, time, status } = item;
     const card = document.createElement("div");
     card.className = "card " + (status === "due" ? "due" : "") + (status === "taken" ? " taken" : "");
     card.dataset.medId = med.id;
+    card.dataset.time = time;
 
     const statusText = status === "taken"
       ? "Chomped ✓"
       : status === "due"
         ? (log && log.status === "nagging" ? `Still waiting (reminded ${log.reminder_count}×) ${ghostSvg()}` : `Due now ${ghostSvg()}`)
-        : `Later today · ${med.time}`;
+        : `Later today · ${time}`;
 
     card.innerHTML = `
       <div class="card-icon ${med.kind}">${iconMarkup(med.emoji, 22)}</div>
       <div class="card-body">
         <div class="card-name">${escapeHtml(med.name)}</div>
-        <div class="card-meta">${med.dose ? escapeHtml(med.dose) + " · " : ""}${med.time}</div>
+        <div class="card-meta">${med.dose ? escapeHtml(med.dose) + " · " : ""}${time}</div>
         <div class="card-status ${status}">${statusText}</div>
       </div>
       <button class="chomp-btn ${status === "taken" ? "done" : ""}" aria-label="Mark taken">
@@ -940,7 +966,7 @@ function renderToday() {
       </button>
     `;
 
-    card.querySelector(".chomp-btn").addEventListener("click", () => markTaken(med, log));
+    card.querySelector(".chomp-btn").addEventListener("click", () => markTaken(med, log, time));
     list.appendChild(card);
   });
 
@@ -959,8 +985,8 @@ function checkForNewAlerts(items) {
 }
 
 /* ---------------- mark taken ---------------- */
-async function markTaken(med, log) {
-  const card = document.querySelector(`.card[data-med-id="${med.id}"]`);
+async function markTaken(med, log, time) {
+  const card = document.querySelector(`.card[data-med-id="${med.id}"][data-time="${time}"]`);
   const btn = card ? card.querySelector(".chomp-btn") : null;
   if (card) card.classList.add("eating");
   if (btn) {
@@ -975,11 +1001,11 @@ async function markTaken(med, log) {
       {
         medicine_id: med.id,
         log_date: state.todayDateStr,
-        scheduled_time: med.time,
+        scheduled_time: time,
         status: "taken",
         taken_at: new Date().toISOString()
       },
-      { onConflict: "medicine_id,log_date" }
+      { onConflict: "medicine_id,log_date,scheduled_time" }
     );
   }
   await loadTodayLogs();
@@ -996,13 +1022,14 @@ function renderAll() {
   list.innerHTML = "";
   state.medicines.forEach((med) => {
     const days = med.days_of_week.length === 7 ? "Every day" : DAY_VALUES.map((v, i) => med.days_of_week.includes(v) ? DAY_LABELS[i] : "·").join(" ");
+    const timesLabel = (med.times || []).join(", ");
     const card = document.createElement("div");
     card.className = "card";
     card.innerHTML = `
       <div class="card-icon ${med.kind}">${iconMarkup(med.emoji, 22)}</div>
       <div class="card-body">
         <div class="card-name">${escapeHtml(med.name)}</div>
-        <div class="card-meta">${med.time} · ${days}</div>
+        <div class="card-meta">${timesLabel} · ${days}</div>
         <div class="card-status upcoming">Nags every ${med.nag_interval_minutes} min</div>
       </div>
       <button class="card-edit-btn" aria-label="Edit">✎</button>
@@ -1046,6 +1073,37 @@ const medForm = document.getElementById("medForm");
 let selectedKind = "medicine";
 let selectedEmoji = "cherry";
 let selectedDays = new Set([0,1,2,3,4,5,6]);
+let selectedTimes = ["08:00"];
+
+function buildTimesList() {
+  const wrap = document.getElementById("timesList");
+  wrap.innerHTML = "";
+  selectedTimes.forEach((t, i) => {
+    const row = document.createElement("div");
+    row.className = "time-row";
+    row.innerHTML = `
+      <input type="time" value="${t}" />
+      <button type="button" class="remove-time-btn" aria-label="Remove this time" ${selectedTimes.length <= 1 ? "disabled" : ""}>✕</button>
+    `;
+    row.querySelector('input[type="time"]').addEventListener("change", (e) => {
+      selectedTimes[i] = e.target.value;
+    });
+    row.querySelector(".remove-time-btn").addEventListener("click", () => {
+      if (selectedTimes.length <= 1) return;
+      selectedTimes.splice(i, 1);
+      buildTimesList();
+    });
+    wrap.appendChild(row);
+  });
+}
+
+document.getElementById("addTimeBtn").addEventListener("click", () => {
+  const last = selectedTimes[selectedTimes.length - 1] || "08:00";
+  const [h, m] = last.split(":").map(Number);
+  const nextHour = ((h + 4) % 24).toString().padStart(2, "0");
+  selectedTimes.push(`${nextHour}:${String(m).padStart(2, "0")}`);
+  buildTimesList();
+});
 
 function buildEmojiRow() {
   const row = document.getElementById("emojiRow");
@@ -1086,14 +1144,14 @@ function openModal(med) {
   document.getElementById("medId").value = med ? med.id : "";
   document.getElementById("medName").value = med ? med.name : "";
   document.getElementById("medDose").value = med ? (med.dose || "") : "";
-  document.getElementById("medTime").value = med ? med.time : "08:00";
   document.getElementById("medNag").value = med ? med.nag_interval_minutes : 15;
   document.getElementById("nagValueLabel").textContent = med ? med.nag_interval_minutes : 15;
   document.getElementById("deleteMedBtn").style.display = med ? "inline-block" : "none";
 
   selectedKind = med ? med.kind : "medicine";
-  selectedEmoji = med ? med.emoji : "💊";
+  selectedEmoji = med ? med.emoji : "cherry";
   selectedDays = new Set(med ? med.days_of_week : [0,1,2,3,4,5,6]);
+  selectedTimes = med && med.times && med.times.length ? [...med.times].sort() : ["08:00"];
 
   document.querySelectorAll(".kind-toggle button").forEach((b) => {
     b.classList.toggle("active", b.dataset.kind === selectedKind);
@@ -1101,6 +1159,7 @@ function openModal(med) {
 
   buildEmojiRow();
   buildDayRow();
+  buildTimesList();
   overlay.classList.add("open");
 }
 
@@ -1126,18 +1185,19 @@ overlay.addEventListener("click", (e) => { if (e.target === overlay) closeModal(
 
 medForm.addEventListener("submit", async (e) => {
   e.preventDefault();
+  const cleanTimes = Array.from(new Set(selectedTimes.filter(Boolean))).sort();
   const payload = {
     name: document.getElementById("medName").value.trim(),
     dose: document.getElementById("medDose").value.trim(),
     emoji: selectedEmoji,
     kind: selectedKind,
-    time: document.getElementById("medTime").value,
+    times: cleanTimes,
     days_of_week: Array.from(selectedDays),
     nag_interval_minutes: parseInt(document.getElementById("medNag").value, 10),
     active: true
   };
-  if (!payload.name || !payload.time || payload.days_of_week.length === 0) {
-    showToast("Please fill in a name, time and at least one day.");
+  if (!payload.name || payload.times.length === 0 || payload.days_of_week.length === 0) {
+    showToast("Please fill in a name, at least one time, and at least one day.");
     return;
   }
 
