@@ -727,7 +727,7 @@ window.addEventListener("unhandledrejection", (e) =>
 
 /* ========================================================= */
 
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const EMOJI_CHOICES = ["💊","🍊","🐟","🧴","🧡","🟡","🧪","🌿","🧠","❤️"];
 const DAY_LABELS = ["M","T","W","T","F","S","S"];
@@ -842,19 +842,19 @@ function localParts(timeZone) {
 
 /* ---------------- data loading ---------------- */
 async function loadSettings() {
-  const { data } = await supabase.from("settings").select("*").eq("id", 1).single();
+  const { data } = await sb.from("settings").select("*").eq("id", 1).single();
   if (data) state.timezone = data.timezone;
 }
 
 async function loadMedicines() {
-  const { data } = await supabase.from("medicines").select("*").order("time", { ascending: true });
+  const { data } = await sb.from("medicines").select("*").order("time", { ascending: true });
   state.medicines = data || [];
 }
 
 async function loadTodayLogs() {
   const { dateStr } = localParts(state.timezone);
   state.todayDateStr = dateStr;
-  const { data } = await supabase.from("logs").select("*").eq("log_date", dateStr);
+  const { data } = await sb.from("logs").select("*").eq("log_date", dateStr);
   state.todayLogs = data || [];
 }
 
@@ -965,9 +965,9 @@ async function markTaken(med, log) {
   playSound("chomp");
 
   if (log) {
-    await supabase.from("logs").update({ status: "taken", taken_at: new Date().toISOString() }).eq("id", log.id);
+    await sb.from("logs").update({ status: "taken", taken_at: new Date().toISOString() }).eq("id", log.id);
   } else {
-    await supabase.from("logs").upsert(
+    await sb.from("logs").upsert(
       {
         medicine_id: med.id,
         log_date: state.todayDateStr,
@@ -1143,9 +1143,9 @@ medForm.addEventListener("submit", async (e) => {
   }
 
   if (state.editingId) {
-    await supabase.from("medicines").update(payload).eq("id", state.editingId);
+    await sb.from("medicines").update(payload).eq("id", state.editingId);
   } else {
-    await supabase.from("medicines").insert(payload);
+    await sb.from("medicines").insert(payload);
   }
   closeModal();
   await refreshAll();
@@ -1154,7 +1154,7 @@ medForm.addEventListener("submit", async (e) => {
 document.getElementById("deleteMedBtn").addEventListener("click", async () => {
   if (!state.editingId) return;
   if (!confirm("Remove this from Chiara's maze for good?")) return;
-  await supabase.from("medicines").delete().eq("id", state.editingId);
+  await sb.from("medicines").delete().eq("id", state.editingId);
   closeModal();
   await refreshAll();
 });
@@ -1167,7 +1167,7 @@ function populateTimezoneSelect() {
   sel.value = state.timezone;
   sel.dataset.built = "1";
   sel.addEventListener("change", async () => {
-    await supabase.from("settings").update({ timezone: sel.value }).eq("id", 1);
+    await sb.from("settings").update({ timezone: sel.value }).eq("id", 1);
     state.timezone = sel.value;
     renderToday();
   });
