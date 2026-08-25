@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "api/send-reminders.js": {
+      "maxDuration": 15
+    },
+    "api/save-subscription.js": {
+      "maxDuration": 10
+    }
+  }
+}
