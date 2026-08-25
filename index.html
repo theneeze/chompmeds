@@ -273,23 +273,51 @@
   .chomp-btn {
     width: 44px; height: 44px;
     border-radius: 50%;
-    border: none;
-    background: var(--chomper);
+    border: 2px solid var(--wall);
+    background: #000;
     flex: 0 0 auto;
     cursor: pointer;
     position: relative;
-    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
   }
-  .chomp-btn::before {
+  .chomp-btn .pac-mini {
+    position: absolute;
+    top: 50%; left: 4px;
+    width: 18px; height: 18px;
+    margin-top: -9px;
+    border-radius: 50%;
+    background: var(--chomper);
+    animation: miniChomp 0.35s infinite steps(1);
+    transition: left 0.45s cubic-bezier(0.4,0,0.2,1);
+    z-index: 2;
+  }
+  .chomp-btn .pac-mini::after {
     content: "";
+    position: absolute;
+    top: 50%; right: -1px;
     width: 0; height: 0;
     border-style: solid;
-    border-width: 7px 0 7px 10px;
-    border-color: transparent transparent transparent var(--bg);
+    border-width: 5px 6px 5px 0;
+    border-color: transparent #000 transparent transparent;
+    transform: translateY(-50%);
   }
-  .chomp-btn.done { background: var(--taken); }
-  .chomp-btn.done::before { display:none; }
-  .chomp-btn.done::after { content: "✓"; color: var(--bg); font-weight: 700; font-size: 18px; }
+  @keyframes miniChomp {
+    0%, 100% { clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); }
+    50% { clip-path: polygon(0 0, 55% 38%, 55% 62%, 0 100%, 0 0, 100% 0, 100% 100%, 0 100%); }
+  }
+  .chomp-btn .dot-mini {
+    position: absolute;
+    top: 50%; right: 9px;
+    width: 6px; height: 6px;
+    margin-top: -3px;
+    border-radius: 50%;
+    background: var(--dot);
+    transition: opacity 0.15s ease 0.3s, transform 0.15s ease 0.3s;
+    z-index: 1;
+  }
+  .chomp-btn.done { border-color: var(--taken); }
+  .chomp-btn.done .pac-mini { left: calc(100% - 22px); animation: none; }
+  .chomp-btn.done .dot-mini { opacity: 0; transform: scale(0); }
 
   .card-edit-btn {
     background: none; border: none; color: var(--text-dim);
@@ -455,8 +483,10 @@
     border-radius: 10px;
     background: var(--bg-card);
     border: 2px solid transparent;
-    font-size: 18px;
     cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
   .emoji-choice.active { border-color: var(--chomper); }
 
@@ -713,9 +743,12 @@ function showFatalError(msg) {
     el = document.createElement("div");
     el.id = "fatalError";
     el.style.cssText =
-      "position:fixed;top:0;left:0;right:0;background:#FF3B3B;color:#000;" +
-      "font-family:monospace;font-size:12px;padding:10px;z-index:9999;" +
-      "white-space:pre-wrap;word-break:break-word;";
+      "position:fixed;top:0;left:0;right:0;background:#FF2D95;color:#000;" +
+      "font-family:'IBM Plex Mono',monospace;font-size:10px;line-height:1.4;" +
+      "padding:5px 30px 5px 10px;z-index:9999;white-space:pre-wrap;" +
+      "word-break:break-word;border-bottom:2px solid #000;cursor:pointer;";
+    el.title = "Tap to dismiss";
+    el.addEventListener("click", () => el.remove());
     document.body.appendChild(el);
   }
   el.textContent = "⚠️ " + msg;
@@ -729,7 +762,6 @@ window.addEventListener("unhandledrejection", (e) =>
 
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const EMOJI_CHOICES = ["💊","🍊","🐟","🧴","🧡","🟡","🧪","🌿","🧠","❤️"];
 const DAY_LABELS = ["M","T","W","T","F","S","S"];
 const DAY_VALUES = [1,2,3,4,5,6,0]; // maps display order -> stored weekday (0=Sun)
 
@@ -815,6 +847,64 @@ function playSound(name) {
     }
     default:
       tone(c, 660, t0, 0.15, "square", 0.15);
+  }
+}
+
+const ICON_DEFS = {
+  "ghost-red":    { type: "ghost", color: "var(--ghost-red)" },
+  "ghost-pink":   { type: "ghost", color: "var(--ghost-pink)" },
+  "ghost-cyan":   { type: "ghost", color: "var(--ghost-cyan)" },
+  "ghost-orange": { type: "ghost", color: "var(--ghost-orange)" },
+  "dot":          { type: "dot" },
+  "power-pellet": { type: "power" },
+  "cherry":       { type: "cherry" },
+  "strawberry":   { type: "strawberry" },
+  "bell":         { type: "bell" },
+  "key":          { type: "key" }
+};
+const EMOJI_CHOICES = Object.keys(ICON_DEFS);
+
+function iconMarkup(key, size) {
+  const s = size || 20;
+  const def = ICON_DEFS[key];
+  if (!def) {
+    // backward compatibility: older entries may still store a plain emoji
+    return `<span style="font-size:${Math.round(s * 0.8)}px;line-height:1;">${escapeHtml(key || "🕹️")}</span>`;
+  }
+  switch (def.type) {
+    case "ghost":
+      return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M4 21V11C4 6.58 7.58 3 12 3C16.42 3 20 6.58 20 11V21L17 19L14.5 21L12 19L9.5 21L7 19L4 21Z" fill="${def.color}"/>
+        <circle cx="9" cy="11" r="1.6" fill="#000"/>
+        <circle cx="15" cy="11" r="1.6" fill="#000"/>
+      </svg>`;
+    case "dot":
+      return `<svg width="${s}" height="${s}" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5" fill="var(--dot)"/></svg>`;
+    case "power":
+      return `<svg width="${s}" height="${s}" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="var(--dot)"/></svg>`;
+    case "cherry":
+      return `<svg width="${s}" height="${s}" viewBox="0 0 24 24">
+        <path d="M12 3C12 3 13 7 12.5 9.5M12 3C12 3 11 7 11.5 9.5" stroke="#5B8A3A" stroke-width="1.4" fill="none"/>
+        <circle cx="8.5" cy="16" r="4.3" fill="#FF3B3B"/>
+        <circle cx="15" cy="15" r="4.3" fill="#FF3B3B"/>
+      </svg>`;
+    case "strawberry":
+      return `<svg width="${s}" height="${s}" viewBox="0 0 24 24">
+        <path d="M12 7C7.5 7 4.5 10.8 4.5 14.5C4.5 18.5 8 21 12 21C16 21 19.5 18.5 19.5 14.5C19.5 10.8 16.5 7 12 7Z" fill="#FF3B5C"/>
+        <path d="M8.5 6.5L12 3L15.5 6.5" stroke="#33FF66" stroke-width="1.6" fill="none"/>
+      </svg>`;
+    case "bell":
+      return `<svg width="${s}" height="${s}" viewBox="0 0 24 24">
+        <path d="M12 3C9 3 8 5.5 8 8V12L6 15H18L16 12V8C16 5.5 15 3 12 3Z" fill="var(--chomper)"/>
+        <circle cx="12" cy="18" r="2" fill="var(--chomper)"/>
+      </svg>`;
+    case "key":
+      return `<svg width="${s}" height="${s}" viewBox="0 0 24 24">
+        <circle cx="8" cy="8" r="4" fill="none" stroke="var(--vitamin)" stroke-width="2.2"/>
+        <path d="M11 11L19 19M15 15L17.5 17.5M12.5 17.5L15 20" stroke="var(--vitamin)" stroke-width="2.2" fill="none"/>
+      </svg>`;
+    default:
+      return "";
   }
 }
 
@@ -930,13 +1020,16 @@ function renderToday() {
         : `Later today · ${med.time}`;
 
     card.innerHTML = `
-      <div class="card-icon ${med.kind}">${med.emoji}</div>
+      <div class="card-icon ${med.kind}">${iconMarkup(med.emoji, 22)}</div>
       <div class="card-body">
         <div class="card-name">${escapeHtml(med.name)}</div>
         <div class="card-meta">${med.dose ? escapeHtml(med.dose) + " · " : ""}${med.time}</div>
         <div class="card-status ${status}">${statusText}</div>
       </div>
-      <button class="chomp-btn ${status === "taken" ? "done" : ""}" aria-label="Mark taken"></button>
+      <button class="chomp-btn ${status === "taken" ? "done" : ""}" aria-label="Mark taken">
+        <span class="pac-mini"></span>
+        <span class="dot-mini"></span>
+      </button>
     `;
 
     card.querySelector(".chomp-btn").addEventListener("click", () => markTaken(med, log));
@@ -953,7 +1046,7 @@ function checkForNewAlerts(items) {
     if ((log.status === "reminded" || log.status === "nagging") && !state.alertedKeys.has(key)) {
       state.alertedKeys.add(key);
       playSound(med.sound);
-      showToast(`${med.emoji} ${med.name} is waiting to be chomped!`);
+      showToast(`🕹️ ${med.name} is waiting to be chomped!`);
     }
   });
 }
@@ -961,8 +1054,13 @@ function checkForNewAlerts(items) {
 /* ---------------- mark taken ---------------- */
 async function markTaken(med, log) {
   const card = document.querySelector(`.card[data-med-id="${med.id}"]`);
+  const btn = card ? card.querySelector(".chomp-btn") : null;
   if (card) card.classList.add("eating");
-  playSound("chomp");
+  if (btn) {
+    btn.classList.add("done");
+    btn.disabled = true;
+  }
+  setTimeout(() => playSound("chomp"), 320); // synced with the dot-mini's CSS transition-delay
 
   if (log) {
     await sb.from("logs").update({ status: "taken", taken_at: new Date().toISOString() }).eq("id", log.id);
@@ -995,7 +1093,7 @@ function renderAll() {
     const card = document.createElement("div");
     card.className = "card";
     card.innerHTML = `
-      <div class="card-icon ${med.kind}">${med.emoji}</div>
+      <div class="card-icon ${med.kind}">${iconMarkup(med.emoji, 22)}</div>
       <div class="card-body">
         <div class="card-name">${escapeHtml(med.name)}</div>
         <div class="card-meta">${med.time} · ${days}</div>
@@ -1040,7 +1138,7 @@ document.getElementById("fabAdd").style.display = "none";
 const overlay = document.getElementById("overlay");
 const medForm = document.getElementById("medForm");
 let selectedKind = "medicine";
-let selectedEmoji = "💊";
+let selectedEmoji = "cherry";
 let selectedDays = new Set([0,1,2,3,4,5,6]);
 
 function buildEmojiRow() {
@@ -1050,7 +1148,7 @@ function buildEmojiRow() {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "emoji-choice" + (e === selectedEmoji ? " active" : "");
-    b.textContent = e;
+    b.innerHTML = iconMarkup(e, 20);
     b.addEventListener("click", () => {
       selectedEmoji = e;
       buildEmojiRow();
