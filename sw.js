@@ -1,5 +1,5 @@
 // ChompMeds service worker
-const CACHE_NAME = "chompmeds-v2";
+const CACHE_NAME = "chompmeds-v3";
 const CORE_ASSETS = [
   "/",
   "/index.html",
@@ -28,6 +28,15 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
 
+  const requestUrl = new URL(event.request.url);
+  const isSameOrigin = requestUrl.origin === self.location.origin;
+
+  // Never intercept third-party requests (CDN scripts, fonts, Supabase API
+  // calls). Let the browser handle those normally so a fix like adding
+  // crossorigin="anonymous" always takes effect immediately, instead of an
+  // old cached (and possibly opaque/masked) response being served forever.
+  if (!isSameOrigin) return;
+
   const isNavigation =
     event.request.mode === "navigate" || event.request.destination === "document";
 
@@ -46,7 +55,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Cache-first for static assets (icons, manifest) is fine, they rarely change.
+  // Cache-first for our own static assets (icons, manifest) is fine, they rarely change.
   event.respondWith(
     caches.match(event.request).then((cached) => cached || fetch(event.request))
   );

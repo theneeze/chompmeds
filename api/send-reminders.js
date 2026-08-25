@@ -124,7 +124,6 @@ module.exports = async (req, res) => {
           : buildNagNotification(med.name, (log.reminder_count || 0) + 1);
 
       payload.medicineId = med.id;
-      payload.sound = med.sound;
 
       const payloadStr = JSON.stringify(payload);
 

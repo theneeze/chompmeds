@@ -469,8 +469,6 @@
   }
   .day-toggle.active { background: var(--chomper); color: var(--bg); font-weight: 700; }
 
-  .sound-row { display: flex; gap: 8px; align-items: center; }
-  .sound-row select { flex: 1; }
 
   .modal-actions {
     display: flex; gap: 10px; margin-top: 18px;
@@ -634,21 +632,8 @@
       </div>
 
       <div class="setting-row">
-        <div class="setting-title">Test the sounds</div>
-        <div class="setting-desc">Preview each arcade sound before assigning it to a medicine.</div>
-        <div class="sound-row" style="flex-wrap:wrap;">
-          <button class="btn small secondary" data-sound="chomp">Chomp</button>
-          <button class="btn small secondary" data-sound="siren">Siren</button>
-          <button class="btn small secondary" data-sound="alarm-classic">Classic alarm</button>
-          <button class="btn small secondary" data-sound="coin">Coin</button>
-          <button class="btn small secondary" data-sound="power-up">Power-up</button>
-          <button class="btn small secondary" data-sound="urgent">Urgent</button>
-        </div>
-      </div>
-
-      <div class="setting-row">
-        <div class="setting-title">About the sounds</div>
-        <div class="setting-desc">Custom arcade sounds play whenever ChompMeds is open. The push notification itself (when the app is closed) uses the iPhone's own alert sound &mdash; iOS doesn't allow custom sounds in background push notifications, only the funny message text travels with those.</div>
+        <div class="setting-title">About notification sounds</div>
+        <div class="setting-desc">ChompMeds uses your iPhone's own default notification sound, the same one all your other apps use. The funny message text is what changes each time, not the sound.</div>
       </div>
     </section>
   </main>
@@ -704,21 +689,6 @@
       <div class="field">
         <label>Days</label>
         <div class="day-row" id="dayRow"></div>
-      </div>
-
-      <div class="field">
-        <label>Sound</label>
-        <div class="sound-row">
-          <select id="medSound">
-            <option value="chomp">Chomp</option>
-            <option value="siren">Siren</option>
-            <option value="alarm-classic">Classic alarm</option>
-            <option value="coin">Coin</option>
-            <option value="power-up">Power-up</option>
-            <option value="urgent">Urgent</option>
-          </select>
-          <button type="button" class="btn small secondary" id="previewSoundBtn">▶ Preview</button>
-        </div>
       </div>
 
       <div class="field">
@@ -787,77 +757,6 @@ let state = {
   alertedKeys: new Set(),
   editingId: null
 };
-
-/* ---------------- Web Audio synthesized sounds ---------------- */
-let audioCtx = null;
-function ctx() {
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  if (audioCtx.state === "suspended") audioCtx.resume();
-  return audioCtx;
-}
-function tone(c, freq, start, dur, type, gain) {
-  const osc = c.createOscillator();
-  const g = c.createGain();
-  osc.type = type;
-  osc.frequency.setValueAtTime(freq, start);
-  g.gain.setValueAtTime(0, start);
-  g.gain.linearRampToValueAtTime(gain, start + 0.01);
-  g.gain.exponentialRampToValueAtTime(0.001, start + dur);
-  osc.connect(g).connect(c.destination);
-  osc.start(start);
-  osc.stop(start + dur + 0.02);
-  return osc;
-}
-function playSound(name) {
-  const c = ctx();
-  const t0 = c.currentTime;
-  switch (name) {
-    case "chomp": {
-      for (let i = 0; i < 4; i++) {
-        tone(c, i % 2 === 0 ? 620 : 260, t0 + i * 0.11, 0.09, "square", 0.18);
-      }
-      break;
-    }
-    case "siren": {
-      const osc = c.createOscillator();
-      const g = c.createGain();
-      osc.type = "triangle";
-      g.gain.setValueAtTime(0.16, t0);
-      osc.frequency.setValueAtTime(400, t0);
-      osc.frequency.linearRampToValueAtTime(900, t0 + 0.5);
-      osc.frequency.linearRampToValueAtTime(400, t0 + 1.0);
-      g.gain.exponentialRampToValueAtTime(0.001, t0 + 1.05);
-      osc.connect(g).connect(c.destination);
-      osc.start(t0); osc.stop(t0 + 1.1);
-      break;
-    }
-    case "alarm-classic": {
-      for (let i = 0; i < 3; i++) {
-        tone(c, 880, t0 + i * 0.35, 0.18, "square", 0.18);
-      }
-      break;
-    }
-    case "coin": {
-      tone(c, 988, t0, 0.09, "square", 0.2);
-      tone(c, 1319, t0 + 0.09, 0.25, "square", 0.2);
-      break;
-    }
-    case "power-up": {
-      [523, 659, 784, 1047, 1319].forEach((f, i) => {
-        tone(c, f, t0 + i * 0.08, 0.13, "square", 0.16);
-      });
-      break;
-    }
-    case "urgent": {
-      for (let i = 0; i < 6; i++) {
-        tone(c, 700, t0 + i * 0.14, 0.08, "sawtooth", 0.15);
-      }
-      break;
-    }
-    default:
-      tone(c, 660, t0, 0.15, "square", 0.15);
-  }
-}
 
 const ICON_DEFS = {
   "ghost-red":    { type: "ghost", color: "var(--ghost-red)" },
@@ -1054,7 +953,6 @@ function checkForNewAlerts(items) {
     const key = log.id + ":" + log.status;
     if ((log.status === "reminded" || log.status === "nagging") && !state.alertedKeys.has(key)) {
       state.alertedKeys.add(key);
-      playSound(med.sound);
       showToast(`🕹️ ${med.name} is waiting to be chomped!`);
     }
   });
@@ -1069,7 +967,6 @@ async function markTaken(med, log) {
     btn.classList.add("done");
     btn.disabled = true;
   }
-  setTimeout(() => playSound("chomp"), 320); // synced with the dot-mini's CSS transition-delay
 
   if (log) {
     await sb.from("logs").update({ status: "taken", taken_at: new Date().toISOString() }).eq("id", log.id);
@@ -1106,7 +1003,7 @@ function renderAll() {
       <div class="card-body">
         <div class="card-name">${escapeHtml(med.name)}</div>
         <div class="card-meta">${med.time} · ${days}</div>
-        <div class="card-status upcoming">Nags every ${med.nag_interval_minutes} min · ${med.sound}</div>
+        <div class="card-status upcoming">Nags every ${med.nag_interval_minutes} min</div>
       </div>
       <button class="card-edit-btn" aria-label="Edit">✎</button>
     `;
@@ -1190,7 +1087,6 @@ function openModal(med) {
   document.getElementById("medName").value = med ? med.name : "";
   document.getElementById("medDose").value = med ? (med.dose || "") : "";
   document.getElementById("medTime").value = med ? med.time : "08:00";
-  document.getElementById("medSound").value = med ? med.sound : "chomp";
   document.getElementById("medNag").value = med ? med.nag_interval_minutes : 15;
   document.getElementById("nagValueLabel").textContent = med ? med.nag_interval_minutes : 15;
   document.getElementById("deleteMedBtn").style.display = med ? "inline-block" : "none";
@@ -1223,9 +1119,6 @@ document.getElementById("medNag").addEventListener("input", (e) => {
   document.getElementById("nagValueLabel").textContent = e.target.value;
 });
 
-document.getElementById("previewSoundBtn").addEventListener("click", () => {
-  playSound(document.getElementById("medSound").value);
-});
 
 document.getElementById("fabAdd").addEventListener("click", () => openModal(null));
 document.getElementById("cancelModalBtn").addEventListener("click", closeModal);
@@ -1240,7 +1133,6 @@ medForm.addEventListener("submit", async (e) => {
     kind: selectedKind,
     time: document.getElementById("medTime").value,
     days_of_week: Array.from(selectedDays),
-    sound: document.getElementById("medSound").value,
     nag_interval_minutes: parseInt(document.getElementById("medNag").value, 10),
     active: true
   };
@@ -1280,10 +1172,6 @@ function populateTimezoneSelect() {
   });
 }
 
-/* ---------------- settings: sound preview buttons ---------------- */
-document.querySelectorAll("[data-sound]").forEach((btn) => {
-  btn.addEventListener("click", () => playSound(btn.dataset.sound));
-});
 
 /* ---------------- iOS "add to home screen" banner ---------------- */
 function isIos() {
@@ -1386,7 +1274,6 @@ async function init() {
 // The boot screen's "PRESS START" tap doubles as the user gesture iOS
 // requires before any sound can play, so audio works cleanly from here on.
 document.getElementById("bootStartBtn").addEventListener("click", () => {
-  try { ctx(); playSound("coin"); } catch (e) { console.error(e); }
   document.getElementById("bootScreen").classList.add("hidden");
   setTimeout(() => { document.getElementById("bootScreen").style.display = "none"; }, 550);
   init().catch((e) => showFatalError("Startup failed: " + e.message));
